@@ -39,12 +39,10 @@ int displayFreeRam(void)
   else {
     free_memory = ((int)&free_memory) - ((int)__brkval);
   }
-  
-
  return free_memory;
 } 
  //const byte font[][5] = {
-   const unsigned char font[95][5] = {
+ const unsigned char font[95][5] = {
          {0x00,0x00,0x00,0x00,0x00},   //   0x20 32
          {0x00,0x00,0x6f,0x00,0x00},   // ! 0x21 33
          {0x00,0x07,0x00,0x07,0x00},   // " 0x22 34
