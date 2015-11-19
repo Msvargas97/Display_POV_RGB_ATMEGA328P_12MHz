@@ -28,6 +28,7 @@
  // defining the alphabet
  // ascii 7x5 side-feeding characters for led modules
  // addapted from http://www.sxlist.com/TECHREF/datafile/charset/8x6.htm
+
 int displayFreeRam(void)
 {
   extern int  __bss_end;

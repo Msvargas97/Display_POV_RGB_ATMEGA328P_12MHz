@@ -1,32 +1,32 @@
 /*
- * Código C++ para Proyecto de grado - Tecnico Profesional en Electrónica -UDI
+   Código C++ para Proyecto de grado - Tecnico Profesional en Electrónica -UDI
 
- /*ALGORITMO
-  *
-  * Los pasos para realización del código son los siguientes:
-  *
-  * 0.Esperar que el sensor de efecto Hall indique el punto de partida de visualización
-  * 1.Se encienden los LEDs según los bits correspondientes de un número en binario
-  * que hace referencia a una columna de cualquier caracter, ya sea una image,numeros o letras.
-  * 2.Gracias a que el timer esta configurado como comparador se asigna un periodo, el cual sera el tiempo que permaneceran
-  * encendida la columna de LEDs del paso anterior.
-  * 3.Apagar los LEDs y repetir el algoritmo desde el paso 0.
-  *
-  * Posteriormente se tiene caracteristicas extras que se añaden en cualquiera de los pasos
-  * mencionados anteriormente segun sea su función,por ejemplo escoger el color de los LEDs
-  * esto se logra enviando un '1' lógico a la base del transistor que controla el color deseado,
-  * dicha caracteristica se implemento en el paso 1.
-  * 
-  * Elaborado por Michael Vargas
-  * 2015
-  * msvargas97@gmail.com
-  * Open Source GitHub: https://github.com/Msvargas97/Display_POV_RGB_ATMEGA328P_12MHz
-  * 
-  * Créditos al MiniPOV4 de Adrafuit, por el bootloader y el software para cargar imagenes.
-  *
-  * #MADE_IN_COLOMBIA
-  *
-  */
+  /*ALGORITMO
+
+    Los pasos para realización del código son los siguientes:
+
+    0.Esperar que el sensor de efecto Hall indique el punto de partida de visualización
+    1.Se encienden los LEDs según los bits correspondientes de un número en binario
+    que hace referencia a una columna de cualquier caracter, ya sea una image,numeros o letras.
+    2.Gracias a que el timer esta configurado como comparador se asigna un periodo, el cual sera el tiempo que permaneceran
+    encendida la columna de LEDs del paso anterior.
+    3.Apagar los LEDs y repetir el algoritmo desde el paso 0.
+
+    Posteriormente se tiene caracteristicas extras que se añaden en cualquiera de los pasos
+    mencionados anteriormente segun sea su función,por ejemplo escoger el color de los LEDs
+    esto se logra enviando un '1' lógico a la base del transistor que controla el color deseado,
+    dicha caracteristica se implemento en el paso 1.
+
+    Elaborado por Michael Vargas
+    2015
+    msvargas97@gmail.com
+    Open Source GitHub: https://github.com/Msvargas97/Display_POV_RGB_ATMEGA328P_12MHz
+
+    Créditos al MiniPOV4 de Adrafuit, por el bootloader y el software para cargar imagenes.
+
+    #MADE_IN_COLOMBIA
+
+*/
 #include <avr/io.h>
 #include <avr/eeprom.h>
 #include <avr/pgmspace.h>
@@ -37,10 +37,11 @@
 
 //Configuración
 #define ENABLE_USB_DETECT  //Activar programación por USB
+#define ENABLE_HALL 1
 #define DEBUG 1//Enviar mensajes por consola para depurar
-#define BUFFER_SIZE 64 // Tamaño maximo del buffer Serial
+#define BUFFER_SIZE 32 // Tamaño maximo del buffer Serial
 #define NUMERO_LEDS 8 //Numero de LEDS a usar
-#define NUM_ESPACIO 6 //Define el número en el cual se inicializar el contar de columnas 
+#define NUM_ESPACIO 5 //Define el número en el cual se inicializar el contar de columnas 
 // Configurar los puertos a usar para los transistores
 #define LED_RED_PINNUM 5
 #define LED_GREEN_PINNUM 4
@@ -67,10 +68,11 @@ volatile uint8_t colour_idx = 0, lastColour = 0; // 0 = R, 1 = G, 2 = B, repeati
 volatile uint8_t shade_idx = 0;
 volatile byte frame_buffer[8];
 //Varaibles para mostrar letras
-volatile uint8_t counter, led_test = 5, toggleMode = '0';
+volatile uint8_t counter, led_test = 5, toggleMode = '0',counter2;
 volatile int8_t  columna = 0;
 volatile byte buffer[BUFFER_SIZE];
-volatile boolean Flag = true, Flag2 = true, ENABLE = false;
+volatile byte temp_buffer[BUFFER_SIZE];
+volatile boolean Flag = true, Flag2 = true,FlagHall=false,ENABLE = false,HOLD=false;
 String tmp_str; //Almacena los datos de fecha y hora
 // Recepcion de datos UART
 String inputString = "";         // a string to hold incoming data
@@ -84,7 +86,9 @@ void setup() {
   Serial.flush();    //Borra los datos almacenados en el buffer
   Serial.begin(38400); //Inicializa la comunicación serial
 #ifdef DEBUG
-  Serial.println("Display POV RGB Bluetooth V1.0");
+  Serial.println("Display LED giratorio controlado por Bluetooth");
+  Serial.println("                Michael Vargas                ");
+  Serial.println("");
   Serial.print("RAM libre: ");
   Serial.print(displayFreeRam());
   Serial.println(" bytes");
@@ -104,7 +108,7 @@ void setup() {
   OFF_NPN(); //Poner en corte los transistores y apagar los LEDS
   LED_3_1_PORTx &= ~(0x07);
   LED_8_4_PORTx &= ~(0xF8);
-  for (byte i = 0; i < 3; i++) LEDS_TEST(i, 30); //Probar los leds 1x1 con un delay de 30ms
+  for (byte i = 0; i < 3; i++) LEDS_TEST(i,80); //Probar los leds 1x1 con un delay de 30ms
   //Configurar e iniciar el timer 1
   noInterrupts();//Deshabilitar interrupciones
   TCCR1A = 0; //Asignar en 0 el registro TCCR1
@@ -113,7 +117,7 @@ void setup() {
   // Sabiendo que se asiganará con un prescaler de 8
   // 1 segundo = 12Mhz / 8 = 46875 , como el timer1 es de 16bits es un número que se puede asignar al registro
   // Se quiere que el comparador se active cada 100us entonces = 1.5*100 -> 150
-  OCR1A = 34; // 750us
+  OCR1A = 14; // 750us
   TCCR1B = _BV(WGM12) | 0x04; //Asignar Prescaler de 256
   // Activar comparar temporizador de interrupción:
   TIMSK1 |= (1 << OCIE1A);
@@ -147,8 +151,8 @@ void loop() {
       if ( toggleMode < 58) {
         switch (toggleMode) {
           case '0':
-          case '2': OCR1A = 34; columna = 0;  colour_idx = lastColour; break; //Cambia el periodo a 750us
-          case '1': OCR1A = 4; break; //Cambia el periodo a 100us ya que se necesita una mayor frecuencia para visualizar las imagenes
+          case '2': cli(); OCR1A = 14; TCCR1B = _BV(WGM12) | 0x04; columna = 0;  colour_idx = lastColour; sei(); break; //Cambia el periodo a 750us
+          case '1': cli(); OCR1A = 1; TCCR1B = _BV(WGM12) | 0x01;  break; //Cambia el periodo a 100us ya que se necesita una mayor frecuencia para visualizar las imagenes
           case '3': OCR1A = map(inputString.substring(2).toInt(), 0, 1000, 0, 46875); break; //Regla de tres para determinar el periodo lo maximo es 1 segundo
           case '4': OFF_NPN(); LED_3_1_PORTx &= ~(0x07);  LED_8_4_PORTx &= ~(0xF8); Flag = Flag2 = true; break;
         }
@@ -160,7 +164,9 @@ void loop() {
           sampleTime = 5; //Tiempo de muestreo inicial
         }
         OFF_NPN();
+#if ENABLE_HALL
         ENABLE = false;
+#endif
         LED_3_1_PORTx &= ~(0x07);
         LED_8_4_PORTx &= ~(0xF8);
         Flag = Flag2 = true;
@@ -180,11 +186,12 @@ void loop() {
     if (toggleMode == '2') setBufferBytes(clock());
     interrupts();// habilitar las interrupciones
     time = millis();
-  }
+    }
 };
 
-ISR (TIMER1_COMPA_vect)
+ISR(TIMER1_COMPA_vect)
 {
+  
   if (Flag) {
 #if DEBUG
     if (Flag2) Serial.println("Esperando datos...");
@@ -192,13 +199,17 @@ ISR (TIMER1_COMPA_vect)
 #endif
     return;
   }
-  if (bitRead(PINC, SENSOR_HALL) == 0 && ENABLE == false) ENABLE = true; //Determinar el punto de inicio del display usando el sensor hall
+#if  ENABLE_HALL
+  if (!digitalRead(A5) && !FlagHall){ENABLE = true; FlagHall=true;} //Determinar el punto de inicio del display usando el sensor hall
+  else if(digitalRead(A5)){ FlagHall=false;}
+  
+ if(counter == size ){counter=0;ENABLE=false;}
   if (ENABLE) {
+#endif
     PORTB |= _BV(2);//Se puede poner un led en el pin 10 como indicador del ciclo del programa
     if (toggleMode == '0' || toggleMode == '2') { //Mode '0' visualización de frases enviadas por bluetooth o visualziar la hora '2'
 
       uint8_t cathodeport = 0; //Reinicia las variables
-      if (counter == size)counter = 0;
       if (columna < 5) {
         // Serial.println(columna);
         if (colour_idx == 0)  cathodeport = _BV(LED_RED_PINNUM);
@@ -226,7 +237,8 @@ ISR (TIMER1_COMPA_vect)
         LED_3_1_PORTx &= ~(0x07);
         LED_8_4_PORTx &= ~(0xF8);
         if (columna == NUM_ESPACIO) columna = -1;
-        if (size > 0 ) counter++;
+        //Serial.println(counter);
+        counter++;
       }
       columna++;
     } else if (toggleMode == '1') {
@@ -297,7 +309,10 @@ ISR (TIMER1_COMPA_vect)
       if (led_test == 2)led_test = 5;
     }
     PORTB &= ~_BV(2);
+
+#if ENABLE_HALL
   }
+#endif
 }
 //######### Función para probar los LED's cada vez que se encienda el POV #########
 void LEDS_TEST(byte color, int time) {
